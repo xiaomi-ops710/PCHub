@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PC Hub</title>
+<meta name="theme-color" content="#1f4fd8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PC Hub">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo-dot">▣</span> PC Hub <small>パソコン部 管理ダッシュボード</small></div>
+  <div class="top-actions">
+    <button class="btn" id="btnSettings" title="設定・バックアップ">⚙︎ 設定</button>
+    <button class="btn primary" id="btnAdd">＋ PCを追加</button>
+  </div>
+</header>
+
+<main>
+  <section class="stats" id="stats"></section>
+
+  <section class="toolbar">
+    <input type="search" id="q" placeholder="🔍 検索（管理番号・モデル・CPU・場所など）">
+    <select id="fMaker"></select>
+    <select id="fOS"></select>
+    <select id="fStatus"></select>
+    <select id="sort">
+      <option value="no">管理番号順</option>
+      <option value="maker">メーカー順</option>
+      <option value="os">OS順</option>
+      <option value="ram">メモリ多い順</option>
+      <option value="year">購入年が新しい順</option>
+      <option value="updated">更新が新しい順</option>
+    </select>
+  </section>
+
+  <div class="count" id="count"></div>
+  <section class="grid" id="grid"></section>
+  <div class="empty" id="empty" hidden>
+    <p>まだPCが登録されていません。</p>
+    <button class="btn primary" id="btnAdd2">＋ 最初のPCを追加</button>
+    <button class="btn" id="btnSample">サンプルデータを入れて試す</button>
+  </div>
+</main>
+
+<!-- 詳細 -->
+<dialog id="dlgDetail"></dialog>
+
+<!-- 編集 -->
+<dialog id="dlgForm">
+  <form id="form" method="dialog">
+    <div class="dlg-head"><h2 id="formTitle">PCを追加</h2><button type="button" class="x" data-close>✕</button></div>
+    <div class="photo-row">
+      <div class="photo-preview" id="photoPreview"></div>
+      <div class="photo-btns">
+        <label class="btn">📷 撮影／写真を選ぶ<input type="file" id="photoInput" accept="image/*" hidden></label>
+        <button type="button" class="btn" id="photoClear">写真を削除</button>
+        <small>写真は自動で縮小して保存されます</small>
+      </div>
+    </div>
+    <div class="fields">
+      <label>管理番号 *<input name="no" required placeholder="例: PC-001"></label>
+      <label>呼び名<input name="nick" placeholder="例: 部室の黒いノート"></label>
+      <label>種類
+        <select name="kind"><option>ノートPC</option><option>デスクトップ</option><option>一体型</option><option>ミニPC</option><option>タブレット</option><option>その他</option></select>
+      </label>
+      <label>メーカー *
+        <select name="maker" id="fMakerSel"></select>
+      </label>
+      <label id="makerOtherWrap" hidden>メーカー名（その他）<input name="makerOther"></label>
+      <label>モデル名<input name="model" placeholder="例: ThinkPad L13 / Latitude 3410 / ProBook 450 G8"></label>
+      <label>OS *
+        <select name="os" id="fOSSel"></select>
+      </label>
+      <label id="osOtherWrap" hidden>OS名（その他）<input name="osOther"></label>
+      <label>OSバージョン<input name="osVer" list="osVerList" placeholder="例: 24H2 / 22H2 / 17.1 / 130">
+        <datalist id="osVerList"><option value="25H2"><option value="24H2"><option value="23H2"><option value="22H2"><option value="21H2"></datalist>
+      </label>
+      <label>CPU<input name="cpu" placeholder="例: Core i5-1135G7 / Ryzen 5 5500U"></label>
+      <label>メモリ (GB)<input name="ram" type="number" min="0" step="1" inputmode="numeric"></label>
+      <label>ストレージ容量 (GB)<input name="storage" type="number" min="0" step="1" inputmode="numeric" placeholder="例: 256 / 512 / 1000"></label>
+      <label>ストレージ種類
+        <select name="storageType"><option>SSD</option><option>HDD</option><option>eMMC</option><option>NVMe SSD</option><option>不明</option></select>
+      </label>
+      <label>画面サイズ (インチ)<input name="screen" inputmode="decimal" placeholder="例: 13.3"></label>
+      <label>購入／導入年<input name="year" type="number" min="1990" max="2100" inputmode="numeric" placeholder="例: 2021"></label>
+      <label>状態
+        <select name="status"><option>稼働中</option><option>貸出中</option><option>修理中</option><option>保管中</option><option>故障</option><option>廃棄予定</option></select>
+      </label>
+      <label>設置場所<input name="place" placeholder="例: PC室 棚A"></label>
+      <label>シリアル番号<input name="serial"></label>
+      <label class="wide">備考<textarea name="memo" rows="3" placeholder="バッテリー劣化、ACアダプタ欠品、ログイン方法など"></textarea></label>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn danger" id="btnDelete" hidden>削除</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close>キャンセル</button>
+      <button type="submit" class="btn primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 設定 -->
+<dialog id="dlgSettings">
+  <div class="dlg-head"><h2>設定・バックアップ</h2><button type="button" class="x" data-close>✕</button></div>
+  <h3>メーカーロゴ</h3>
+  <p class="note">お手持ちのロゴ画像（PNG/JPG/SVG）を選ぶと、カードにロゴが表示されます。未設定のときは文字で表示します。</p>
+  <div id="logoList" class="logo-list"></div>
+  <h3>バックアップ</h3>
+  <p class="note">データはこのiPadの中に保存されます。機種変更や初期化に備え、時々書き出してください。</p>
+  <div class="row">
+    <button class="btn" id="btnExport">⬇︎ 書き出し (JSON)</button>
+    <label class="btn">⬆︎ 読み込み<input type="file" id="importInput" accept="application/json,.json" hidden></label>
+    <button class="btn" id="btnCsv">CSVで書き出し</button>
+  </div>
+  <h3>その他</h3>
+  <div class="row"><button class="btn danger" id="btnWipe">全データを削除</button></div>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
