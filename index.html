@@ -4,127 +4,125 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PC Hub</title>
-<meta name="theme-color" content="#1f4fd8">
+<meta name="theme-color" content="#f6f8ff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="PC Hub">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><span class="logo-dot">▣</span> PC Hub <small>パソコン部 管理ダッシュボード</small></div>
-  <div class="top-actions">
-    <button class="btn" id="btnSettings" title="設定・バックアップ">⚙︎ 設定</button>
-    <button class="btn primary" id="btnAdd">＋ PCを追加</button>
+<div id="app">
+  <nav id="nav" aria-label="メインメニュー"></nav>
+  <div id="main">
+    <main id="view"></main>
   </div>
-</header>
-
-<main>
-  <section class="stats" id="stats"></section>
-
-  <section class="toolbar">
-    <input type="search" id="q" placeholder="🔍 検索（管理番号・モデル・CPU・場所など）">
-    <select id="fMaker"></select>
-    <select id="fOS"></select>
-    <select id="fStatus"></select>
-    <select id="sort">
-      <option value="no">管理番号順</option>
-      <option value="maker">メーカー順</option>
-      <option value="os">OS順</option>
-      <option value="ram">メモリ多い順</option>
-      <option value="year">購入年が新しい順</option>
-      <option value="updated">更新が新しい順</option>
-    </select>
-  </section>
-
-  <div class="count" id="count"></div>
-  <section class="grid" id="grid"></section>
-  <div class="empty" id="empty" hidden>
-    <p>まだPCが登録されていません。</p>
-    <button class="btn primary" id="btnAdd2">＋ 最初のPCを追加</button>
-    <button class="btn" id="btnSample">サンプルデータを入れて試す</button>
-  </div>
-</main>
+</div>
 
 <!-- 詳細 -->
-<dialog id="dlgDetail"></dialog>
+<dialog id="dlgDetail" class="sheet"></dialog>
 
-<!-- 編集 -->
-<dialog id="dlgForm">
-  <form id="form" method="dialog">
-    <div class="dlg-head"><h2 id="formTitle">PCを追加</h2><button type="button" class="x" data-close>✕</button></div>
-    <div class="photo-row">
-      <div class="photo-preview" id="photoPreview"></div>
-      <div class="photo-btns">
-        <label class="btn">📷 撮影／写真を選ぶ<input type="file" id="photoInput" accept="image/*" hidden></label>
-        <button type="button" class="btn" id="photoClear">写真を削除</button>
-        <small>写真は自動で縮小して保存されます</small>
-      </div>
+<!-- 追加・編集 -->
+<dialog id="dlgForm" class="sheet">
+  <form id="form" method="dialog" autocomplete="off">
+    <header class="sheet-bar">
+      <button type="button" class="icon-btn" data-act="close" aria-label="閉じる"><span class="ms">close</span></button>
+      <h2 id="formTitle">PCを追加</h2>
+      <button type="submit" class="btn filled"><span class="ms">check</span>保存</button>
+    </header>
+    <div class="sheet-body">
+      <section class="fsec">
+        <h3><span class="ms">photo_camera</span>写真 <small>（最大4枚・先頭がカードに表示）</small></h3>
+        <div class="photo-strip" id="photoStrip"></div>
+      </section>
+
+      <section class="fsec">
+        <h3><span class="ms">badge</span>基本情報</h3>
+        <div class="fgrid">
+          <label class="tf"><span>管理番号 *</span><input name="no" required placeholder="PC-001"></label>
+          <label class="tf"><span>呼び名</span><input name="nick" placeholder="部室の黒いノート"></label>
+          <label class="tf"><span>種類</span><select name="kind"></select></label>
+          <label class="tf"><span>メーカー *</span><select name="maker" id="fMakerSel"></select></label>
+          <label class="tf" id="makerOtherWrap" hidden><span>メーカー名（その他）</span><input name="makerOther"></label>
+          <label class="tf wide"><span>モデル名</span><input name="model" placeholder="ThinkPad L13 / Latitude 3410 / ProBook 450 G8"></label>
+        </div>
+      </section>
+
+      <section class="fsec">
+        <h3><span class="ms">memory</span>OS・スペック</h3>
+        <div class="detect-row"><button type="button" class="btn tonal" data-act="detect"><span class="ms">sensors</span>いま使っているPCから読み取る</button><small>PCのブラウザで開いたときに使えます（メモリは目安）</small></div>
+        <div class="fgrid">
+          <label class="tf"><span>OS *</span><select name="os" id="fOSSel"></select></label>
+          <label class="tf" id="osOtherWrap" hidden><span>OS名（その他）</span><input name="osOther"></label>
+          <label class="tf"><span>OSバージョン</span><input name="osVer" list="osVerList" placeholder="24H2 / 22H2 / 17.1 / 130"></label>
+          <datalist id="osVerList"><option value="25H2"><option value="24H2"><option value="23H2"><option value="22H2"><option value="21H2"></datalist>
+          <label class="tf wide"><span>CPU</span><input name="cpu" placeholder="Core i5-1135G7 / Ryzen 5 5500U"></label>
+          <label class="tf"><span>メモリ (GB)</span><input name="ram" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label class="tf"><span>ストレージ容量 (GB)</span><input name="storage" type="number" min="0" step="1" inputmode="numeric" placeholder="256 / 512 / 1000"></label>
+          <label class="tf"><span>ストレージ種類</span><select name="storageType"><option>SSD</option><option>NVMe SSD</option><option>HDD</option><option>eMMC</option><option>不明</option></select></label>
+          <label class="tf"><span>画面サイズ (インチ)</span><input name="screen" inputmode="decimal" placeholder="13.3"></label>
+        </div>
+      </section>
+
+      <section class="fsec">
+        <h3><span class="ms">inventory_2</span>管理情報</h3>
+        <div class="fgrid">
+          <label class="tf"><span>状態</span><select name="status"></select></label>
+          <label class="tf"><span>設置場所</span><input name="place" placeholder="PC室 棚A"></label>
+          <label class="tf"><span>導入年</span><input name="year" type="number" min="1990" max="2100" inputmode="numeric" placeholder="2021"></label>
+          <label class="tf"><span>保証期限</span><input name="warrantyEnd" type="date"></label>
+          <label class="tf"><span>最終点検日</span><input name="lastCheck" type="date"></label>
+          <label class="tf"><span>シリアル番号</span><input name="serial"></label>
+          <label class="tf"><span>ホスト名</span><input name="host" placeholder="PC-CLUB-01"></label>
+          <label class="tf"><span>MACアドレス</span><input name="mac" placeholder="AA:BB:CC:DD:EE:FF"></label>
+          <label class="tf wide"><span>付属品</span><input name="accessories" placeholder="ACアダプタ、マウス、ケース"></label>
+          <label class="tf"><span>購入金額 (円)</span><input name="price" type="number" min="0" step="1" inputmode="numeric" placeholder="98000"></label>
+          <label class="tf"><span>タグ（カンマ区切り）</span><input name="tags" placeholder="プログラミング用, 大会用"></label>
+          <label class="tf wide"><span>インストール済みソフト（カンマ区切り）</span><input name="software" placeholder="VS Code, Python, Blender"></label>
+          <label class="tf wide"><span>備考</span><textarea name="memo" rows="3" placeholder="バッテリー劣化、ログイン方法、注意点など"></textarea></label>
+        </div>
+      </section>
+      <div class="sheet-foot"><button type="button" class="btn danger tonal" id="btnDelete" hidden><span class="ms">delete</span>このPCを削除</button></div>
     </div>
-    <div class="fields">
-      <label>管理番号 *<input name="no" required placeholder="例: PC-001"></label>
-      <label>呼び名<input name="nick" placeholder="例: 部室の黒いノート"></label>
-      <label>種類
-        <select name="kind"><option>ノートPC</option><option>デスクトップ</option><option>一体型</option><option>ミニPC</option><option>タブレット</option><option>その他</option></select>
-      </label>
-      <label>メーカー *
-        <select name="maker" id="fMakerSel"></select>
-      </label>
-      <label id="makerOtherWrap" hidden>メーカー名（その他）<input name="makerOther"></label>
-      <label>モデル名<input name="model" placeholder="例: ThinkPad L13 / Latitude 3410 / ProBook 450 G8"></label>
-      <label>OS *
-        <select name="os" id="fOSSel"></select>
-      </label>
-      <label id="osOtherWrap" hidden>OS名（その他）<input name="osOther"></label>
-      <label>OSバージョン<input name="osVer" list="osVerList" placeholder="例: 24H2 / 22H2 / 17.1 / 130">
-        <datalist id="osVerList"><option value="25H2"><option value="24H2"><option value="23H2"><option value="22H2"><option value="21H2"></datalist>
-      </label>
-      <label>CPU<input name="cpu" placeholder="例: Core i5-1135G7 / Ryzen 5 5500U"></label>
-      <label>メモリ (GB)<input name="ram" type="number" min="0" step="1" inputmode="numeric"></label>
-      <label>ストレージ容量 (GB)<input name="storage" type="number" min="0" step="1" inputmode="numeric" placeholder="例: 256 / 512 / 1000"></label>
-      <label>ストレージ種類
-        <select name="storageType"><option>SSD</option><option>HDD</option><option>eMMC</option><option>NVMe SSD</option><option>不明</option></select>
-      </label>
-      <label>画面サイズ (インチ)<input name="screen" inputmode="decimal" placeholder="例: 13.3"></label>
-      <label>購入／導入年<input name="year" type="number" min="1990" max="2100" inputmode="numeric" placeholder="例: 2021"></label>
-      <label>状態
-        <select name="status"><option>稼働中</option><option>貸出中</option><option>修理中</option><option>保管中</option><option>故障</option><option>廃棄予定</option></select>
-      </label>
-      <label>設置場所<input name="place" placeholder="例: PC室 棚A"></label>
-      <label>シリアル番号<input name="serial"></label>
-      <label class="wide">備考<textarea name="memo" rows="3" placeholder="バッテリー劣化、ACアダプタ欠品、ログイン方法など"></textarea></label>
+  </form>
+  <input type="file" id="photoInput" accept="image/*" multiple hidden>
+</dialog>
+
+<!-- 貸出 -->
+<dialog id="dlgLoan" class="modal">
+  <form id="loanForm" method="dialog" autocomplete="off">
+    <span class="ms hero-ic">handshake</span>
+    <h2>貸し出す</h2>
+    <p class="sub" id="loanTarget"></p>
+    <label class="tf"><span>借りる人 *</span><input name="who" required list="whoList" placeholder="例: 2年 山田さん"></label><datalist id="whoList"></datalist>
+    <label class="tf"><span>返却予定日</span><input name="due" type="date"></label>
+    <div class="chip-row">
+      <button type="button" class="chip" data-act="due" data-days="1">明日</button>
+      <button type="button" class="chip" data-act="due" data-days="3">3日後</button>
+      <button type="button" class="chip" data-act="due" data-days="7">1週間後</button>
+      <button type="button" class="chip" data-act="due" data-days="14">2週間後</button>
     </div>
-    <div class="dlg-foot">
-      <button type="button" class="btn danger" id="btnDelete" hidden>削除</button>
-      <span class="spacer"></span>
-      <button type="button" class="btn" data-close>キャンセル</button>
-      <button type="submit" class="btn primary">保存</button>
+    <div class="modal-actions">
+      <button type="button" class="btn text" data-act="close">キャンセル</button>
+      <button type="submit" class="btn filled">貸し出す</button>
     </div>
   </form>
 </dialog>
 
-<!-- 設定 -->
-<dialog id="dlgSettings">
-  <div class="dlg-head"><h2>設定・バックアップ</h2><button type="button" class="x" data-close>✕</button></div>
-  <h3>メーカーロゴ</h3>
-  <p class="note">お手持ちのロゴ画像（PNG/JPG/SVG）を選ぶと、カードにロゴが表示されます。未設定のときは文字で表示します。</p>
-  <div id="logoList" class="logo-list"></div>
-  <h3>バックアップ</h3>
-  <p class="note">データはこのiPadの中に保存されます。機種変更や初期化に備え、時々書き出してください。</p>
-  <div class="row">
-    <button class="btn" id="btnExport">⬇︎ 書き出し (JSON)</button>
-    <label class="btn">⬆︎ 読み込み<input type="file" id="importInput" accept="application/json,.json" hidden></label>
-    <button class="btn" id="btnCsv">CSVで書き出し</button>
-  </div>
-  <h3>その他</h3>
-  <div class="row"><button class="btn danger" id="btnWipe">全データを削除</button></div>
-</dialog>
-
-<div class="toast" id="toast" hidden></div>
+<div id="selbar" class="selbar" hidden></div>
+<dialog id="dlgCompare" class="sheet"></dialog>
+<input type="file" id="csvInput" accept=".csv,text/csv" hidden>
+<div id="snack" class="snack" hidden><span id="snackMsg"></span><button id="snackAct" class="btn text"></button></div>
+<div id="printArea"></div>
+<input type="file" id="importInput" accept="application/json,.json" hidden>
 <script src="app.js"></script>
 </body>
 </html>
