@@ -1,6 +1,6 @@
 // PC Hub Service Worker: オフラインでも起動できるようにキャッシュ
 // ファイルを更新したら VERSION を変えると、iPadのアプリも新しい版に切り替わります。
-const VERSION = 'pc-hub-v3';
+const VERSION = 'pc-hub-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

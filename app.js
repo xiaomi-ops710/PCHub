@@ -26,7 +26,7 @@ const fmtDT = t => { const d = new Date(t); return `${d.getFullYear()}/${d.getMo
 
 /* ---------- 設定（localStorage） ---------- */
 const CFG_KEY = 'pchub.cfg';
-let cfg = { mode: 'auto', hue: 225, layout: 'grid', org: '' };
+let cfg = { mode: 'auto', hue: 225, layout: 'grid', org: '', size: 'm', checkDays: 180, warnDays: 90, logoTrans: false };
 try { Object.assign(cfg, JSON.parse(localStorage.getItem(CFG_KEY) || '{}')); } catch (e) { }
 const saveCfg = () => { try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) { } };
 
@@ -76,7 +76,7 @@ const dbClear = () => rq(store('pcs', 'readwrite').clear());
 const metaGet = k => rq(store('meta').get(k));
 const metaSet = (k, v) => rq(store('meta', 'readwrite').put(v, k));
 
-let pcs = [], logos = {}, lastBackup = 0;
+let pcs = [], logos = {}, logoOpts = {}, lastBackup = 0;
 const S = { view: 'devices', q: '', maker: '', os: '', status: '', flag: '', fav: false, sort: 'no', group: 'none', tag: '', sel: null };
 let editingId = null, formPhotos = [], loanId = null;
 
@@ -90,7 +90,7 @@ const natCmp = (a, b) => String(a).localeCompare(String(b), 'ja', { numeric: tru
 const uid = () => 'pc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const osIcon = p => { const o = osOf(p); return /windows/i.test(o) ? 'window' : /zorin|ubuntu|linux/i.test(o) ? 'terminal' : /chrome/i.test(o) ? 'language' : /mac/i.test(o) ? 'laptop_mac' : 'memory'; };
 const kindIcon = p => KINDS[p.kind] || 'devices';
-const logoOrMono = p => { const n = makerOf(p); return logos[n] ? `<img src="${logos[n]}" alt="${esc(n)}">` : `<span class="mono">${esc(n.slice(0, 1).toUpperCase())}</span>${esc(n)}`; };
+const logoOrMono = p => { const n = makerOf(p); return logos[n] ? logoImg(n, n, '') : `<span class="mono">${esc(n.slice(0, 1).toUpperCase())}</span>${esc(n)}`; };
 const photosOf = p => p.photos && p.photos.length ? p.photos : [];
 const log = (p, t) => { (p.log = p.log || []).unshift({ t: Date.now(), e: t }); if (p.log.length > 60) p.log.length = 60; };
 
@@ -118,12 +118,12 @@ function win11(p) {
 function warrantyState(p) {
   if (!p.warrantyEnd) return null;
   const d = diffDays(p.warrantyEnd, today());
-  return d < 0 ? 'expired' : d <= 90 ? 'soon' : 'ok';
+  return d < 0 ? 'expired' : d <= cfg.warnDays ? 'soon' : 'ok';
 }
 function checkState(p) {
   if (['廃棄予定', '故障'].includes(p.status)) return null;
   if (!p.lastCheck) return 'never';
-  return diffDays(today(), p.lastCheck) > 180 ? 'old' : 'ok';
+  return diffDays(today(), p.lastCheck) > cfg.checkDays ? 'old' : 'ok';
 }
 function flagsOf(p) {
   const f = [];
@@ -221,7 +221,7 @@ const attnCounts = () => {
 /* ---------- ナビゲーション ---------- */
 const VIEWS = [['devices', 'devices', 'デバイス'], ['analytics', 'insights', '分析'], ['ops', 'event_available', '貸出・点検'], ['audit', 'checklist', '棚卸し'], ['settings', 'settings', '設定']];
 function renderNav() {
-  const c = attnCounts(); const opsN = c.overdue + c.check;
+  const c = attnCounts(); const opsN = c.overdue + c.check + tasks.filter(t => !t.done).length;
   $('#nav').innerHTML = `
     <img class="nav-logo-img" src="icons/icon.svg" alt="PC Hub">
     <button class="nav-fab" data-act="add" aria-label="PCを追加">${ms('add')}<b>追加</b></button>
@@ -239,13 +239,13 @@ function render() {
 
 /* ---------- デバイス画面 ---------- */
 function stat(cls, icon, val, unit, label) {
-  return `<div class="stat ${cls}"><i class="deco"></i>${ms(icon, 'fill')}<b>${val}<small>${unit}</small></b><span class="l">${label}</span></div>`;
+  return `<div class="stat ${cls}"><i class="deco"></i>${ms(icon, 'fill')}<b><span data-n="${val}">${val}</span><small>${unit}</small></b><span class="l">${label}</span></div>`;
 }
 function chipRow(label, key, items) {
   if (items.length < 1) return '';
   return `<div class="chip-row"><span class="chip-label">${label}</span>
     <button class="chip ${!S[key] ? 'on' : ''}" data-act="filter" data-k="${key}" data-v="">${!S[key] ? ms('check') : ''}すべて</button>
-    ${items.map(([v, n]) => `<button class="chip ${S[key] === v ? 'on' : ''}" data-act="filter" data-k="${key}" data-v="${esc(v)}">${S[key] === v ? ms('check') : ''}${esc(v)} <small>${n}</small></button>`).join('')}</div>`;
+    ${items.map(([v, n]) => `<button class="chip ${S[key] === v ? 'on' : ''}" data-act="filter" data-k="${key}" data-v="${esc(v)}">${S[key] === v ? ms('check') : ''}${chipLogo(key, v)}${esc(v)} <small>${n}</small></button>`).join('')}</div>`;
 }
 
 function viewDevices() {
@@ -296,6 +296,7 @@ function viewDevices() {
   const gr = $('#group'); if (gr) gr.onchange = e => { S.group = e.target.value; renderList(); };
   if (n) renderList();
   updateSelbar();
+  animateCounts();
 }
 
 function cardHTML(p, i) {
@@ -314,7 +315,7 @@ function cardHTML(p, i) {
       <h3>${esc(p.model || '（モデル名未入力）')}</h3>
       ${p.nick || p.place ? `<p class="sub">${esc([p.nick, p.place].filter(Boolean).join(' ・ '))}</p>` : ''}
       <div class="chips">
-        <span class="tag os">${ms(osIcon(p))}${esc(osFull(p))}</span>
+        <span class="tag os">${osMark(p)}${esc(osFull(p))}</span>
         ${p.ram ? `<span class="tag">${ms('memory_alt')}${esc(p.ram)}GB</span>` : ''}
         ${p.storage ? `<span class="tag">${ms('storage')}${esc(p.storageType || '')} ${fmtGB(p.storage)}</span>` : ''}
       </div>
@@ -412,11 +413,12 @@ function viewOps() {
     }).join('') : `<div class="panel" style="color:var(--on-surface-var)">いま貸し出し中のPCはありません。</div>`}</div>
     ${avail.length ? `<div class="sec">${ms('inventory_2', 'fill')}<h2>貸し出せるPC</h2><small>${avail.length}台</small></div>
     <div class="rows">${avail.slice(0, 8).map(p => rowItem(p, 't-ok', kindIcon(p), `${p.no} ・ ${makerOf(p)} ${p.model || ''}`, `${osFull(p)} ／ ${p.place || '場所未設定'}`, `<button class="btn tonal" data-act="lend" data-id="${p.id}">${ms('handshake')}貸出</button>`)).join('')}</div>` : ''}
-    <div class="sec">${ms('fact_check', 'fill')}<h2>点検が必要</h2><small>${checks.length}台（最終点検から180日超 または 未点検）</small></div>
+    <div class="sec">${ms('fact_check', 'fill')}<h2>点検が必要</h2><small>${checks.length}台（最終点検から${cfg.checkDays}日超 または 未点検）</small></div>
     <div class="rows">${checks.length ? checks.map(p => rowItem(p, 't-warn', 'fact_check', `${p.no} ・ ${makerOf(p)} ${p.model || ''}`, p.lastCheck ? `最終点検 ${fmtD(p.lastCheck)}` : '点検の記録がありません',
       `<button class="btn tonal" data-act="checked" data-id="${p.id}">${ms('done')}点検済み</button>`)).join('') : `<div class="panel" style="color:var(--on-surface-var)">すべて点検済みです。</div>`}</div>
-    <div class="sec">${ms('verified_user', 'fill')}<h2>保証期限</h2><small>${wars.length}台（切れ・90日以内）</small></div>
+    <div class="sec">${ms('verified_user', 'fill')}<h2>保証期限</h2><small>${wars.length}台（切れ・${cfg.warnDays}日以内）</small></div>
     <div class="rows">${wars.length ? wars.map(p => { const d = diffDays(p.warrantyEnd, today()); return rowItem(p, d < 0 ? 't-mute' : 't-warn', 'verified_user', `${p.no} ・ ${makerOf(p)} ${p.model || ''}`, `${fmtD(p.warrantyEnd)} ${d < 0 ? '（切れています）' : `（あと${d}日）`}`); }).join('') : `<div class="panel" style="color:var(--on-surface-var)">期限が近いPCはありません。</div>`}</div>
+    ${tasksHTML()}
     <div class="sec">${ms('history', 'fill')}<h2>最近の変更</h2></div>
     <div class="panel"><div class="timeline">${hist.length ? hist.map(h => `<div class="tl"><i></i><div><b>${esc(h.p.no)}</b> ${esc(h.e)}<span>${fmtDT(h.t)}</span></div></div>`).join('') : '<span style="color:var(--on-surface-var)">まだ履歴がありません。</span>'}</div></div>`;
 }
@@ -433,10 +435,16 @@ function viewSettings() {
         ${[['auto', 'brightness_auto', '自動'], ['light', 'light_mode', 'ライト'], ['dark', 'dark_mode', 'ダーク']].map(([k, ic, l]) => `<button class="${cfg.mode === k ? 'on' : ''}" data-act="mode" data-v="${k}">${ms(ic)}${l}</button>`).join('')}
       </div>
       <div class="swatches">${HUES.map(([n, h]) => `<button class="swatch ${cfg.hue === h ? 'on' : ''}" style="background:hsl(${h} 62% 46%)" data-act="hue" data-v="${h}" aria-label="${n}">${ms('check')}</button>`).join('')}</div></div>
+    <div class="set-group"><h3>${ms('tune', 'fill')}表示と通知の基準</h3><p>カードの大きさ・点検や保証のお知らせのタイミングを変えられます。</p>
+      <div class="seg">${[['s', '小'], ['m', '中'], ['l', '大']].map(([k, l]) => `<button class="${cfg.size === k ? 'on' : ''}" data-act="size" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="fgrid" style="margin-top:20px">
+        <label class="tf"><span>点検の目安（日ごと）</span><select id="checkDays">${[90, 180, 365].map(v => `<option value="${v}" ${cfg.checkDays === v ? 'selected' : ''}>${v}日</option>`).join('')}</select></label>
+        <label class="tf"><span>保証の警告（何日前から）</span><select id="warnDays">${[30, 60, 90, 180].map(v => `<option value="${v}" ${cfg.warnDays === v ? 'selected' : ''}>${v}日前</option>`).join('')}</select></label></div></div>
     <div class="set-group"><h3>${ms('image', 'fill')}メーカーロゴ</h3><p>公式サイトなどで入手したロゴ画像（PNG/JPG/SVG）を設定すると、カードに表示されます。未設定のときは頭文字のマークで表示します。</p>
-      ${names.map(n => `<div class="logo-item"><span class="nm">${esc(n)}</span><span class="pv">${logos[n] ? `<img src="${logos[n]}" alt="">` : '未設定'}</span>
-        <label class="btn tonal">${ms('upload')}画像<input type="file" accept="image/*" hidden data-logo="${esc(n)}"></label>
-        ${logos[n] ? `<button class="icon-btn" data-act="logoclear" data-n="${esc(n)}" aria-label="解除">${ms('close')}</button>` : ''}</div>`).join('')}</div>
+      <button class="chip ${cfg.logoTrans ? 'on' : ''}" data-act="logotrans" style="margin-bottom:6px">${cfg.logoTrans ? ms('check') : ''}取り込むとき白い背景を透明にする</button>
+      ${names.map(n => logoRow(n, n)).join('')}</div>
+    <div class="set-group"><h3>${ms('window', 'fill')}OSのロゴ</h3><p>Windows・Zorin OS・ChromeOS Flex などのロゴ画像を設定できます。カード、詳細、OSの絞り込みボタンに表示されます。未設定のときは標準のアイコンです。ロゴが黒一色でダークモードで見えにくいときは「ダーク時は白く」をオンにしてください。</p>
+      ${[...new Set([...OSES.filter(o => o !== 'その他'), ...pcs.filter(p => p.os === 'その他' && p.osOther).map(osOf)])].map(n => logoRow('os:' + n, n)).join('')}</div>
     <div class="set-group"><h3>${ms('cloud_sync', 'fill')}バックアップ・書き出し</h3><p>データはこのiPadの中に保存されます。${lastBackup ? `最後のバックアップ: ${fmtDT(lastBackup)}。` : 'まだバックアップしていません。'}</p>
       <div class="btn-row">${canFiles() ? `<button class="btn filled" data-act="share">${ms('ios_share')}共有して保存（ファイル・AirDrop）</button>` : ''}
       <button class="btn ${canFiles() ? 'tonal' : 'filled'}" data-act="export">${ms('download')}書き出し (JSON)</button>
@@ -448,7 +456,7 @@ function viewSettings() {
     <div class="set-group"><h3>${ms('science', 'fill')}その他</h3>
       <div class="btn-row"><button class="btn outlined" data-act="sample">${ms('auto_awesome')}サンプルを追加</button>
       <button class="btn danger tonal" data-act="wipe">${ms('delete_forever')}全データを削除</button></div></div>
-    <p style="text-align:center;color:var(--on-surface-var);font-size:12px">PC Hub v2.0 ・ Material 3 Expressive</p>`;
+    <p style="text-align:center;color:var(--on-surface-var);font-size:12px">PC Hub v4.0 ・ Material 3 Expressive</p>`;
 }
 
 /* ---------- 詳細ダイアログ ---------- */
@@ -456,7 +464,7 @@ function showDetail(id) {
   const p = pcs.find(x => x.id === id); if (!p) return;
   const [sic, stone] = ST[p.status] || ST['稼働中'];
   const photos = photosOf(p);
-  const cell = (ic, l, v) => v ? `<div class="spec-cell">${ms(ic, 'fill')}<div><small>${l}</small><b>${esc(v)}</b></div></div>` : '';
+  const cell = (ic, l, v) => v ? `<div class="spec-cell">${ic.startsWith('<') ? ic : ms(ic, 'fill')}<div><small>${l}</small><b>${esc(v)}</b></div></div>` : '';
   const adv = advice(p); const w = warrantyState(p), cs = checkState(p);
   const od = p.loan && p.loan.due && p.loan.due < today();
   const dlg = $('#dlgDetail');
@@ -477,10 +485,12 @@ function showDetail(id) {
         <button class="btn tonal" data-act="checked" data-id="${p.id}">${ms('fact_check')}点検済み</button>
         <button class="btn tonal" data-act="dup" data-id="${p.id}">${ms('content_copy')}複製</button>
         <button class="btn tonal" data-act="note" data-id="${p.id}">${ms('edit_note')}メモ</button>
+        <button class="btn tonal" data-act="task" data-id="${p.id}">${ms('task_alt')}タスク</button>
+        <button class="btn tonal" data-act="label" data-id="${p.id}">${ms('label')}ラベル</button>
       </div>
       ${p.loan ? `<div class="loan-card ${od ? 't-bad' : 't-info'}">${ms(od ? 'alarm' : 'handshake', 'fill')}<div class="grow"><b>${esc(p.loan.who)} さんが貸出中</b><span class="s">${fmtD(p.loan.from)} 〜 返却予定 ${fmtD(p.loan.due)}${od ? `（${diffDays(today(), p.loan.due)}日超過）` : ''}</span></div></div>` : ''}
       <div class="d-sec"><h3>${ms('memory', 'fill')}スペック</h3><div class="spec-grid">
-        ${cell(osIcon(p), 'OS', osFull(p))}${cell('memory', 'CPU', p.cpu)}${cell('memory_alt', 'メモリ', p.ram ? p.ram + ' GB' : '')}
+        ${cell(osMark(p), 'OS', osFull(p))}${cell('memory', 'CPU', p.cpu)}${cell('memory_alt', 'メモリ', p.ram ? p.ram + ' GB' : '')}
         ${cell('storage', 'ストレージ', p.storage ? `${p.storageType || ''} ${fmtGB(p.storage)}` : '')}${cell('aspect_ratio', '画面', p.screen ? p.screen + ' インチ' : '')}</div></div>
       <div class="d-sec"><h3>${ms('inventory_2', 'fill')}管理情報</h3><div class="spec-grid">
         ${cell('location_on', '設置場所', p.place)}${cell('calendar_month', '導入年', p.year ? p.year + '年' : '')}
@@ -618,6 +628,8 @@ async function importJSON(file) {
     if (!confirm(`${j.pcs.length} 台のデータを読み込みます。同じIDのデータは上書きされます。よろしいですか？`)) return;
     for (const p of j.pcs) { if (!p.id) p.id = uid(); await dbPut(migrate(p)); }
     if (j.logos) { logos = { ...logos, ...j.logos }; await metaSet('logos', logos); }
+    if (j.logoOpts) { logoOpts = { ...logoOpts, ...j.logoOpts }; await metaSet('logoOpts', logoOpts); }
+    if (Array.isArray(j.tasks)) { tasks = j.tasks; await saveTasks(); }
     if (j.audit && j.audit.history) { audit = { active: audit.active, history: j.audit.history }; await saveAudit(); }
     pcs = (await dbAll()).map(migrate); render(); toast('読み込みました');
   } catch (err) { alert('読み込みに失敗しました: ' + err.message); }
@@ -667,6 +679,7 @@ function updateSelbar() {
     <button class="btn tonal" data-act="bulkplace">${ms('location_on')}場所</button>
     <button class="btn tonal" data-act="bulkcheck">${ms('fact_check')}点検済み</button>
     <button class="btn tonal" data-act="compare">${ms('compare_arrows')}比較</button>
+    <button class="btn tonal" data-act="labels">${ms('label')}ラベル</button>
     <button class="btn danger tonal" data-act="bulkdel" aria-label="削除">${ms('delete')}</button>
     <button class="icon-btn" data-act="selmode" aria-label="選択を終了">${ms('close')}</button>`;
   $('#bulkStatus').onchange = e => {
@@ -765,7 +778,7 @@ function viewAudit() {
 }
 
 /* ---------- 共有・CSV取り込み ---------- */
-const backupPayload = () => JSON.stringify({ app: 'pc-hub', version: 3, pcs, logos, audit }, null, 1);
+const backupPayload = () => JSON.stringify({ app: 'pc-hub', version: 4, pcs, logos, logoOpts, tasks, audit }, null, 1);
 function canFiles() { try { return !!(navigator.canShare && navigator.canShare({ files: [new File(['x'], 'a.json', { type: 'application/json' })] })); } catch (e) { return false; } }
 async function shareBackup() {
   const file = new File([backupPayload()], `pc-hub-backup-${stamp()}.json`, { type: 'application/json' });
@@ -855,6 +868,84 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'n') openForm();
 });
 
+/* ---------- ロゴ（メーカー／OS） ---------- */
+function logoImg(key, alt, cls) {
+  if (!logos[key]) return '';
+  const inv = logoOpts[key] && logoOpts[key].inv ? ' logo-inv' : '';
+  return `<img class="${cls || ''}${inv}" src="${logos[key]}" alt="${esc(alt || '')}">`;
+}
+const chipLogo = (key, v) => key === 'os' ? logoImg('os:' + v, '', 'oslogo') : key === 'maker' ? logoImg(v, '', 'oslogo') : '';
+function osMark(p) { return logos['os:' + osOf(p)] ? logoImg('os:' + osOf(p), osOf(p), 'oslogo') : ms(osIcon(p)); }
+function whiteToAlpha(url) {
+  return new Promise(res => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height), a = d.data;
+      for (let i = 0; i < a.length; i += 4) { const m = Math.min(a[i], a[i + 1], a[i + 2]); if (m >= 245) a[i + 3] = 0; else if (m > 200) a[i + 3] = Math.round(a[i + 3] * (245 - m) / 45); }
+      x.putImageData(d, 0, 0); res(c.toDataURL('image/png'));
+    };
+    img.onerror = () => res(url); img.src = url;
+  });
+}
+async function processLogo(f) {
+  if (f.type === 'image/svg+xml') return fileToDataURL(f);
+  const url = await resizeImage(f, 360, 0.92, 'image/png');
+  return cfg.logoTrans ? whiteToAlpha(url) : url;
+}
+function logoRow(key, label) {
+  const on = logoOpts[key] && logoOpts[key].inv;
+  return `<div class="logo-item"><span class="nm">${esc(label)}</span><span class="pv">${logos[key] ? logoImg(key, label, '') : '未設定'}</span>
+    ${logos[key] ? `<button class="chip ${on ? 'on' : ''}" data-act="logoinv" data-n="${esc(key)}">${ms('contrast')}ダーク時は白く</button>` : ''}
+    <label class="btn tonal">${ms('upload')}画像<input type="file" accept="image/*" hidden data-logo="${esc(key)}"></label>
+    ${logos[key] ? `<button class="icon-btn" data-act="logoclear" data-n="${esc(key)}" aria-label="解除">${ms('close')}</button>` : ''}</div>`;
+}
+function applyCfg() { document.documentElement.style.setProperty('--card-min', ({ s: '230px', m: '290px', l: '360px' })[cfg.size] || '290px'); }
+
+/* ---------- やることリスト ---------- */
+let tasks = [];
+const saveTasks = () => metaSet('tasks', tasks);
+function tasksHTML() {
+  const open = tasks.filter(t => !t.done), done = tasks.filter(t => t.done);
+  const row = t => { const p = t.pc && pcs.find(x => x.id === t.pc); return `<div class="rowitem task ${t.done ? 'done' : ''}" data-act="ttoggle" data-id="${t.id}"><span class="abox">${ms('check')}</span><div class="tx"><b>${esc(t.text)}</b><span>${p ? esc(p.no) + ' ・ ' + esc(makerOf(p)) + ' ' + esc(p.model || '') : '機材全体'}</span></div><button class="icon-btn" data-act="tdel" data-id="${t.id}" aria-label="削除">${ms('close')}</button></div>`; };
+  return `<div class="sec">${ms('task_alt', 'fill')}<h2>やることリスト</h2><small>${open.length}件</small><span style="flex:1"></span><button class="btn tonal" data-act="task">${ms('add')}追加</button></div>
+    <div class="rows">${tasks.length ? open.concat(done).map(row).join('') : `<div class="panel" style="color:var(--on-surface-var)">やることはありません。「追加」から、修理・OS更新・購入などのメモを残せます。</div>`}</div>
+    ${done.length ? `<div class="btn-row"><button class="btn text" data-act="tclear">${ms('delete_sweep')}完了したものを消す</button></div>` : ''}`;
+}
+async function addTask(pcId) {
+  const t = prompt('やること（例: バッテリー交換、Windows 11へ更新）'); if (!t || !t.trim()) return;
+  tasks.push({ id: uid(), text: t.trim(), done: false, pc: pcId || '', created: Date.now() });
+  await saveTasks(); if (S.view === 'ops') viewOps(); renderNav(); toast('やることを追加しました');
+}
+
+/* ---------- ラベル印刷 ---------- */
+function printLabels(ids) {
+  const ps = ids.map(id => pcs.find(x => x.id === id)).filter(Boolean).sort((a, b) => natCmp(a.no, b.no)); if (!ps.length) return;
+  $('#printArea').innerHTML = `<div class="labels">${ps.map(p => `<div class="label"><div class="l-no">${esc(p.no)}</div><div class="l-mk">${esc(makerOf(p))} ${esc(p.model || '')}</div>
+    <div class="l-sp">${esc(osFull(p))}<br>${esc(p.cpu || '')}<br>${p.ram ? p.ram + 'GB' : ''} ${p.storage ? esc(p.storageType || '') + ' ' + fmtGB(p.storage) : ''}</div>
+    <div class="l-pl">${esc([p.place, p.host].filter(Boolean).join(' ／ '))}</div></div>`).join('')}</div>`;
+  setTimeout(() => window.print(), 50);
+}
+
+/* ---------- 演出（リップル・数字カウントアップ） ---------- */
+let statAnim = true;
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function animateCounts() {
+  if (!statAnim) return; statAnim = false; if (reduceMotion()) return;
+  document.querySelectorAll('[data-n]').forEach(el => {
+    const to = +el.dataset.n, t0 = performance.now();
+    const step = t => { const k = Math.min(1, (t - t0) / 700), e = 1 - Math.pow(1 - k, 3); el.textContent = Math.round(to * e); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+document.addEventListener('pointerdown', e => {
+  const t = e.target.closest && e.target.closest('.btn,.chip,.icon-btn,.arow,.rowitem,.attn-item,.card'); if (!t || reduceMotion()) return;
+  const r = t.getBoundingClientRect(), s = Math.max(r.width, r.height) * 2, el = document.createElement('span');
+  el.className = 'ripple'; el.style.cssText = `width:${s}px;height:${s}px;left:${e.clientX - r.left - s / 2}px;top:${e.clientY - r.top - s / 2}px`;
+  t.appendChild(el); setTimeout(() => el.remove(), 650);
+}, { passive: true });
+
 /* ---------- サンプル ---------- */
 async function addSamples() {
   const t = today(), y = new Date().getFullYear();
@@ -879,10 +970,12 @@ async function addSamples() {
 /* ---------- イベント ---------- */
 document.addEventListener('click', async e => {
   const dlg = e.target; if (dlg.tagName === 'DIALOG') { if (dlg.id !== 'dlgForm') dlg.close(); return; } // 入力中のフォームは背景タップで閉じない
+  if (e.target.closest && e.target.closest('#dlgPhoto')) { $('#dlgPhoto').close(); return; }
+  if (e.target.matches && e.target.matches('.d-hero img')) { const ph = $('#dlgPhoto'); ph.innerHTML = `<img src="${e.target.src}" alt=""><span class="pill dark ph-hint">タップで閉じる</span>`; ph.showModal(); return; }
   const t = e.target.closest('[data-act]'); if (!t) return;
   const d = t.dataset, id = d.id;
   switch (d.act) {
-    case 'nav': S.view = d.v; S.sel = null; render(); window.scrollTo(0, 0); break;
+    case 'nav': { const go = () => { S.view = d.v; S.sel = null; statAnim = true; render(); window.scrollTo(0, 0); }; if (document.startViewTransition && !reduceMotion()) document.startViewTransition(go); else go(); break; }
     case 'close': t.closest('dialog').close(); break;
     case 'add': openForm(); break;
     case 'open': if (S.sel && S.view === 'devices' && t.classList.contains('card')) toggleSel(id, t); else showDetail(id); break;
@@ -900,7 +993,16 @@ document.addEventListener('click', async e => {
     case 'layout': cfg.layout = d.v; saveCfg(); viewDevices(); break;
     case 'mode': cfg.mode = d.v; saveCfg(); applyTheme(); render(); break;
     case 'hue': cfg.hue = +d.v; saveCfg(); applyTheme(); render(); break;
-    case 'logoclear': delete logos[d.n]; await metaSet('logos', logos); render(); break;
+    case 'logoclear': delete logos[d.n]; delete logoOpts[d.n]; await metaSet('logos', logos); await metaSet('logoOpts', logoOpts); render(); break;
+    case 'logoinv': logoOpts[d.n] = { ...(logoOpts[d.n] || {}), inv: !(logoOpts[d.n] && logoOpts[d.n].inv) }; await metaSet('logoOpts', logoOpts); render(); break;
+    case 'logotrans': cfg.logoTrans = !cfg.logoTrans; saveCfg(); viewSettings(); break;
+    case 'size': cfg.size = d.v; saveCfg(); applyCfg(); viewSettings(); break;
+    case 'task': addTask(id || ''); break;
+    case 'ttoggle': { const tk = tasks.find(x => x.id === id); if (tk) { tk.done = !tk.done; t.classList.toggle('done', tk.done); saveTasks(); renderNav(); } break; }
+    case 'tdel': tasks = tasks.filter(x => x.id !== id); saveTasks(); viewOps(); renderNav(); break;
+    case 'tclear': tasks = tasks.filter(x => !x.done); saveTasks(); viewOps(); renderNav(); break;
+    case 'label': printLabels([id]); break;
+    case 'labels': printLabels([...(S.sel || [])]); break;
     case 'export': exportJSON(); break;
     case 'import': $('#importInput').click(); break;
     case 'csv': exportCSV(); break;
@@ -944,7 +1046,7 @@ document.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset && t.dataset.logo && t.files[0]) {
     const f = t.files[0];
-    logos[t.dataset.logo] = f.type === 'image/svg+xml' ? await fileToDataURL(f) : await resizeImage(f, 320, 0.92, f.type === 'image/png' ? 'image/png' : 'image/jpeg');
+    logos[t.dataset.logo] = await processLogo(f);
     await metaSet('logos', logos); render(); toast('ロゴを設定しました');
   }
   if (t.id === 'fMakerSel' || t.id === 'fOSSel') syncOther();
@@ -954,6 +1056,7 @@ document.addEventListener('change', async e => {
   }
   if (t.id === 'importInput' && t.files[0]) { importJSON(t.files[0]); t.value = ''; }
   if (t.id === 'csvInput' && t.files[0]) { importCSV(t.files[0]); t.value = ''; }
+  if (t.id === 'checkDays' || t.id === 'warnDays') { cfg[t.id] = +t.value; saveCfg(); renderNav(); toast('保存しました'); }
   if (t.id === 'orgInput') { cfg.org = t.value.trim(); saveCfg(); toast('保存しました'); }
 });
 document.addEventListener('submit', e => {
@@ -971,6 +1074,8 @@ document.addEventListener('click', e => { if (e.target.id === 'btnDelete' || e.t
   logos = (await metaGet('logos')) || {};
   lastBackup = (await metaGet('lastBackup')) || 0;
   audit = (await metaGet('audit')) || { active: null, history: [] }; audit.history = audit.history || [];
+  logoOpts = (await metaGet('logoOpts')) || {}; tasks = (await metaGet('tasks')) || [];
+  applyCfg();
   render();
   if (new URLSearchParams(location.search).get('new')) openForm();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { });
